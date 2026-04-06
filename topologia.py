@@ -12,6 +12,8 @@ import time
 
 OVSSwitch.OVSVersion = '2.13.1'
 
+LOG = True
+TESTE = True
 
 class LabTopo(Topo):
     "Topologia do Laboratório 1"
@@ -24,8 +26,8 @@ class LabTopo(Topo):
         switchIntnet = self.addSwitch('s1')
         switchServnet = self.addSwitch('s2')
         switchExt = self.addSwitch('s3')
-        ext_host = self.addHost('ext_host', ip='8.8.8.8/24', defaultRoute='via 8.8.8.1')
-        self.addLink(ext_host, switchExt)
+        ext_nat = self.addHost('ext_nat', ip='10.0.5.3/29', defaultRoute='via 10.0.5.1')
+        self.addLink(ext_nat, switchExt)
 
         # --- Servidores (servnet) ---
         serverWeb = self.addHost('Web', ip='10.0.4.5/25', defaultRoute='via 10.0.4.1')
@@ -49,7 +51,7 @@ class LabTopo(Topo):
             r1,
             switchExt,
             intfName1='r1-eth0',
-            params1={'ip': '8.8.8.1/24'},
+            params1={'ip': '10.0.5.2/29'},
         )
 
         # 2. Ligação extnet: R1 <-> R2
@@ -84,10 +86,26 @@ def simpleTest():
 
     topo = LabTopo()
     net = Mininet(topo=topo, switch=OVSSwitch)
+    net.addNAT(name='nat0', connect=net.get('s3'), ip='10.0.5.1/29')
     net.start()
 
     r1 = net.get('r1')
     r2 = net.get('r2')
+    nat0 = net.get('nat0')
+
+    # Ensinar ao NAT como alcançar as redes internas devolvendo os pacotes para o r1
+    nat0.cmd('ip route add 10.0.0.0/23 via 10.0.5.2')
+    nat0.cmd('ip route add 10.0.4.0/25 via 10.0.5.2')
+
+    # --- Forçar a rota padrão que o addNAT apagou ---
+    h1, h2, h3, h4 = net.get('h1', 'h2', 'h3', 'h4')
+    serverWeb, serverDNS = net.get('Web', 'DNS')
+
+    for host in [h1, h2, h3, h4]:
+        host.cmd('ip route add default via 10.0.0.1')
+        
+    for server in [serverWeb, serverDNS]:
+        server.cmd('ip route add default via 10.0.4.1')
 
     # Habilitar encaminhamento de pacotes IPv4 (IP Forwarding)
     r1.cmd('sysctl -w net.ipv4.ip_forward=1')
@@ -99,51 +117,99 @@ def simpleTest():
     # Configurar roteamento no R1
     r1.cmd('ip route add 10.0.0.0/23 via 10.0.3.2')
     r1.cmd('ip route add 10.0.4.0/25 via 10.0.3.2')
-
+    r1.cmd('ip route add default via 10.0.5.1')
     r1.cmd('iptables -t nat -A POSTROUTING -o r1-eth0 -j MASQUERADE')
 
     print("\n--- Dumping host connections ---")
     dumpNodeConnections(net.hosts)
 
     print("\nAguardando os switches")
-    time.sleep(2)
+    time.sleep(1)
 
     print("\n--- Testing network connectivity (pingAll) ---")
     net.pingAll()
 
-    # Teste extra para validar a comunicação entre hosts e servidores
-    print("\nValidando Comunicação entre Hosts e Servidores")
-    h1 = net.get('h1')
-    resultado_ping_web = h1.cmd('ping -c 3 10.0.4.5')
-    resultado_ping_dns = h1.cmd('ping -c 3 10.0.4.10')
-    print(resultado_ping_web)
-    print(resultado_ping_dns)
+    # Invocar os hosts, servidores, roteadores e switches
+    h1, h2, h3, h4 = net.get('h1', 'h2', 'h3', 'h4')
+    serverWeb, serverDNS = net.get('Web', 'DNS')
+    r1, r2 = net.get('r1', 'r2')
+    s1, s2, s3 = net.get('s1', 's2', 's3')
 
-    # Teste extra para validar a comunicação entre hosts e os servidores usando iperf3
-    print("\nValidando Comunicação entre Hosts e Servidores usando iperf3")
-    serverWeb = net.get('Web')
-    serverDNS = net.get('DNS')
-    serverWeb.cmd('iperf3 -s -D')
-    serverDNS.cmd('iperf3 -s -D')
-    resultado_iperf_web = h1.cmd(f'iperf3 -c {serverDNS.IP()} -t 5')
-    resultado_iperf_dns = h1.cmd(f'iperf3 -c {serverWeb.IP()} -t 5')
-    print(resultado_iperf_web)
-    print(resultado_iperf_dns)
+    if LOG:
+        print("\n--- Hosts ---")
+        for host in [h1, h2, h3, h4]:
+            print(f"{host.name}: {host.IP()}")
+            print(f"Rota padrão: {host.cmd('ip route').strip()}")
 
-    # Teste extra para validar a comunicação entre servidores e hosts
-    print("\nValidando Comunicação entre Servidores e Hosts")
-    resultado_ping_h1_web = net.get('Web').cmd('ping -c 3 10.0.0.10')
-    print(resultado_ping_h1_web)
+        print("\n--- Servidores ---")
+        for server in [serverWeb, serverDNS]:
+            print(f"{server.name}: {server.IP()}")
+            print(f"Rota padrão: {server.cmd('ip route').strip()}")
 
-    # Teste extra para validar a comunicação entre servidores e a internet
-    print("\nValidando Comunicação entre Servidores e Internet")
-    resultado_ping_web_ext = net.get('Web').cmd('ping -c 3 8.8.8.8')
-    print(resultado_ping_web_ext)
+        print("\n--- Roteadores ---")
+        for router in [r1, r2]:
+            print(f"{router.name}: {router.IP()}")
+            print(f"Rota padrão: {router.cmd('ip route').strip()}")
 
-    # Teste extra para validar o host h1 acessando a internet via NAT
-    print("\nValidando Acesso à Internet via NAT")
-    resultado_ping = h1.cmd('ping -c 3 8.8.8.8')
-    print(resultado_ping)
+        print("\n--- Switches ---")
+        for switch in [s1, s2, s3]:
+            print(f"{switch.name}: {switch.IP()}")
+            print(f"  Conexões: {switch.connectionsTo(switch)}")
+
+
+    if TESTE:
+        # Teste extra para validar a comunicação entre hosts e servidores
+        print("\nValidando Comunicação entre Hosts e Servidores")
+        resultado_ping_web = h1.cmd('ping -c 3 10.0.4.5')
+        print(resultado_ping_web)
+
+        print("\nRoteamento do h1 para o servidor Web:")
+        tracert_web_h1 = h1.cmd('traceroute -n 10.0.4.5')
+        print(tracert_web_h1)
+
+        print("\nRoteamento do h1 para o servidor DNS:")
+        tracert_dns_h1 = h1.cmd('traceroute -n 10.0.4.10')
+        print(tracert_dns_h1)
+
+
+        # Teste extra para validar a comunicação entre servidores e hosts
+        print("\nValidando Comunicação entre Servidores e Hosts")
+        resultado_ping_h1_web = serverWeb.cmd('ping -c 3 10.0.0.10')
+        print(resultado_ping_h1_web)
+
+        print("\nRoteamento do servidor Web para h1:")
+        tracert_h1_web = serverWeb.cmd('traceroute -n 10.0.0.10')
+        print(tracert_h1_web)
+
+        # Teste extra para validar a comunicação entre hosts e os servidores usando iperf3
+        print("\nValidando Comunicação entre Hosts e Servidores usando iperf3")
+        serverWeb.cmd('iperf3 -s -D')
+        serverDNS.cmd('iperf3 -s -D')
+        resultado_iperf_web = h1.cmd(f'iperf3 -c {serverDNS.IP()} -t 5')
+        resultado_iperf_dns = h1.cmd(f'iperf3 -c {serverWeb.IP()} -t 5')
+        print(resultado_iperf_web)
+        print(resultado_iperf_dns)
+
+        # Teste extra para validar a comunicação entre servidores e a internet
+        print("\nValidando Comunicação entre Servidores e Internet")
+        resultado_ping_web_ext = serverWeb.cmd('ping -c 3 8.8.8.8')
+        print(resultado_ping_web_ext)
+
+        print("\nRoteamento do servidor Web para a internet:")
+        tracert_web_ext = serverWeb.cmd('traceroute -n 8.8.8.8')
+        print(tracert_web_ext)
+
+        # Teste extra para validar o host h1 acessando a internet via NAT
+        print("\nValidando Acesso à Internet via NAT")
+        resultado_ping = h1.cmd('ping -c 3 8.8.8.8')
+        print(resultado_ping)
+
+        print("\nRoteamento do h1 para a internet:")
+        tracert_h1_ext = h1.cmd('traceroute -n 8.8.8.8')
+        print(tracert_h1_ext)
+
+    else:
+        print("\nTeste de conectividade entre hosts e servidores desabilitado. Use TESTE=True para habilitar.")
 
     # CLI(net)
     net.stop()
