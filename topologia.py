@@ -14,6 +14,9 @@ OVSSwitch.OVSVersion = '2.13.1'
 
 LOG = True
 TESTE = True
+ANALISE_REDE = True
+
+captura_host = {}
 
 class LabTopo(Topo):
     "Topologia do Laboratório 1"
@@ -135,6 +138,16 @@ def simpleTest():
     r1, r2 = net.get('r1', 'r2')
     s1, s2, s3 = net.get('s1', 's2', 's3')
 
+    if ANALISE_REDE:
+        # CLI(net)
+        print("\nSerá salvo todos o trafego de rede em um arquivo pcap para análise posterior.")
+        for host in [h1, h2, h3, h4, serverWeb, serverDNS, r1, r2]:
+            interface = "any" if host.name in ['r1', 'r2'] else host.intfNames()[0]
+
+            captura_host[host.name] = host.popen(f'tcpdump -i {interface} -w {host.name}.pcap')
+        
+        time.sleep(3)
+
     if LOG:
         print("\n--- Hosts ---")
         for host in [h1, h2, h3, h4]:
@@ -211,7 +224,11 @@ def simpleTest():
     else:
         print("\nTeste de conectividade entre hosts e servidores desabilitado. Use TESTE=True para habilitar.")
 
-    # CLI(net)
+    if ANALISE_REDE:
+        print("\nParando a rede para análise dos arquivos pcap.")
+        for nome_host, processo in captura_host.items():
+            processo.terminate()
+
     net.stop()
 
 
