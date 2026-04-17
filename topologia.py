@@ -129,8 +129,8 @@ def simpleTest():
     print("\nAguardando os switches")
     time.sleep(1)
 
-    print("\n--- Testing network connectivity (pingAll) ---")
-    net.pingAll()
+    # print("\n--- Testing network connectivity (pingAll) ---")
+    # net.pingAll()
 
     # Invocar os hosts, servidores, roteadores e switches
     h1, h2, h3, h4 = net.get('h1', 'h2', 'h3', 'h4')
