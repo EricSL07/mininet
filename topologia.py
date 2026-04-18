@@ -14,7 +14,7 @@ OVSSwitch.OVSVersion = '2.13.1'
 
 LOG = True
 TESTE = True
-ANALISE_REDE = True
+ANALISE_REDE = False
 
 captura_host = {}
 
@@ -29,8 +29,6 @@ class LabTopo(Topo):
         switchIntnet = self.addSwitch('s1')
         switchServnet = self.addSwitch('s2')
         switchExt = self.addSwitch('s3')
-        ext_nat = self.addHost('ext_nat', ip='10.0.5.3/29', defaultRoute='via 10.0.5.1')
-        self.addLink(ext_nat, switchExt)
 
         # --- Servidores (servnet) ---
         serverWeb = self.addHost('Web', ip='10.0.4.5/25', defaultRoute='via 10.0.4.1')
@@ -39,10 +37,10 @@ class LabTopo(Topo):
         self.addLink(serverDNS, switchServnet)
 
         # --- Hosts (intnet) ---
-        h1 = self.addHost('h1', ip='10.0.0.10/23', defaultRoute='via 10.0.0.1')
-        h2 = self.addHost('h2', ip='10.0.0.20/23', defaultRoute='via 10.0.0.1')
-        h3 = self.addHost('h3', ip='10.0.0.30/23', defaultRoute='via 10.0.0.1')
-        h4 = self.addHost('h4', ip='10.0.0.40/23', defaultRoute='via 10.0.0.1')
+        h1 = self.addHost('h1', ip='10.0.1.10/23', defaultRoute='via 10.0.1.1')
+        h2 = self.addHost('h2', ip='10.0.1.20/23', defaultRoute='via 10.0.1.1')
+        h3 = self.addHost('h3', ip='10.0.1.30/23', defaultRoute='via 10.0.1.1')
+        h4 = self.addHost('h4', ip='10.0.1.40/23', defaultRoute='via 10.0.1.1')
 
         self.addLink(h1, switchIntnet)
         self.addLink(h2, switchIntnet)
@@ -54,8 +52,9 @@ class LabTopo(Topo):
             r1,
             switchExt,
             intfName1='r1-eth0',
-            params1={'ip': '10.0.5.2/29'},
+            params1={'ip': '10.0.5.2/30'},
         )
+
 
         # 2. Ligação extnet: R1 <-> R2
         self.addLink(
@@ -80,7 +79,7 @@ class LabTopo(Topo):
             switchIntnet,
             r2,
             intfName2='r2-eth2',
-            params2={'ip': '10.0.0.1/23'},
+            params2={'ip': '10.0.1.1/23'},
         )
 
 
@@ -89,7 +88,8 @@ def simpleTest():
 
     topo = LabTopo()
     net = Mininet(topo=topo, switch=OVSSwitch)
-    net.addNAT(name='nat0', connect=net.get('s3'), ip='10.0.5.1/29')
+    nat0 = net.addNAT(name='nat0', connect=net.get('s3'), ip='10.0.5.1/29')
+    nat0.configDefault()
     net.start()
 
     r1 = net.get('r1')
@@ -105,7 +105,7 @@ def simpleTest():
     serverWeb, serverDNS = net.get('Web', 'DNS')
 
     for host in [h1, h2, h3, h4]:
-        host.cmd('ip route add default via 10.0.0.1')
+        host.cmd('ip route add default via 10.0.1.1')
         
     for server in [serverWeb, serverDNS]:
         server.cmd('ip route add default via 10.0.4.1')
@@ -121,7 +121,6 @@ def simpleTest():
     r1.cmd('ip route add 10.0.0.0/23 via 10.0.3.2')
     r1.cmd('ip route add 10.0.4.0/25 via 10.0.3.2')
     r1.cmd('ip route add default via 10.0.5.1')
-    r1.cmd('iptables -t nat -A POSTROUTING -o r1-eth0 -j MASQUERADE')
 
     print("\n--- Dumping host connections ---")
     dumpNodeConnections(net.hosts)
@@ -187,11 +186,11 @@ def simpleTest():
 
         # Teste extra para validar a comunicação entre servidores e hosts
         print("\nValidando Comunicação entre Servidores e Hosts")
-        resultado_ping_h1_web = serverWeb.cmd('ping -c 3 10.0.0.10')
+        resultado_ping_h1_web = serverWeb.cmd('ping -c 3 10.0.1.10')
         print(resultado_ping_h1_web)
 
         print("\nRoteamento do servidor Web para h1:")
-        tracert_h1_web = serverWeb.cmd('traceroute -n 10.0.0.10')
+        tracert_h1_web = serverWeb.cmd('traceroute -n 10.0.1.10')
         print(tracert_h1_web)
 
         # Teste extra para validar a comunicação entre hosts e os servidores usando iperf3
@@ -213,7 +212,7 @@ def simpleTest():
         print(tracert_web_ext)
 
         # Teste extra para validar o host h1 acessando a internet via NAT
-        print("\nValidando Acesso à Internet via NAT")
+        print("\nValidando Acesso de h1 à Internet via NAT")
         resultado_ping = h1.cmd('ping -c 3 8.8.8.8')
         print(resultado_ping)
 
