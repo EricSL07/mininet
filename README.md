@@ -28,7 +28,7 @@ Para atender à capacidade exigida de hosts em cada segmento, o endereçamento f
 | **Ext/P2P**| Enlaces R1 <-> R2 | `10.0.3.0/30` | - |
 | **NAT** | Ligação R1 <-> Internet| `10.0.5.0/29` | `10.0.5.1` |
 
-![Topologia Mininet](topologia_mininet.png)
+![Topologia Mininet](topologia.png)
 
 ## 🚀 Como Executar
 
